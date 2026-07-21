@@ -8,6 +8,8 @@ window.SUPABASE_CONFIG = {
   key: SUPABASE_KEY
 };
 
-if (typeof supabase !== 'undefined') {
+if (typeof supabase !== 'undefined' && SUPABASE_URL && SUPABASE_KEY) {
   window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+} else {
+  window.supabaseClient = null;
 }
