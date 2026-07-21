@@ -86,7 +86,8 @@
       welcomeStep2: 'Thêm nhiệm vụ con để chia nhỏ',
       welcomeStep3: 'Giao ngày thực hiện & đặt mức ưu tiên',
       welcomeCta: 'Thêm dự án đầu tiên',
-      toastUndo: 'Hoàn tác'
+      toastUndo: 'Hoàn tác',
+      syncing: 'Đang đồng bộ dữ liệu…'
     },
     en: {
       weekRangePrefix: '',
@@ -167,7 +168,8 @@
       welcomeStep2: 'Add subtasks to break it down',
       welcomeStep3: 'Assign subtasks to days & set priorities',
       welcomeCta: 'Add your first project',
-      toastUndo: 'Undo'
+      toastUndo: 'Undo',
+      syncing: 'Synchronizing flowist…'
     }
   };
 
@@ -425,7 +427,11 @@
     const keys = Object.keys(allData).sort().reverse();
     if (keys.length > 20) keys.slice(20).forEach(k => delete allData[k]);
     localStorage.setItem(key, JSON.stringify(allData));
-    syncSupabaseCloud(key, allData);
+    
+    // Only upload to cloud if it has finished loading to prevent overwriting cloud with empty state
+    if (cloudLoaded || state.currentUser === 'guest') {
+      syncSupabaseCloud(key, allData);
+    }
   }
 
   // Sync-only local load (no cloud call, safe to call multiple times)
@@ -1873,6 +1879,9 @@
     const tabArchiveTxt = $('#tabArchiveTxt');
     if (tabArchiveTxt) tabArchiveTxt.textContent = state.lang === 'vi' ? 'Lưu trữ' : 'Archive';
 
+    const lblSyncing = $('#lblSyncing');
+    if (lblSyncing) lblSyncing.textContent = t('syncing');
+
     // Panel Titles
     const lblProjectsTitle = $('#lblProjectsTitle');
     if (lblProjectsTitle) lblProjectsTitle.textContent = t('titleProjects');
@@ -2157,6 +2166,11 @@
 
   async function enterWorkspace() {
     cloudLoaded = false;
+    
+    const isGuest = state.currentUser === 'guest';
+    const loader = $('#loadingScreen');
+    if (!isGuest && loader) loader.classList.remove('hidden');
+
     $('#loginScreen').classList.add('hidden');
     $('#appShell').classList.remove('hidden');
     $('#tabbar').classList.remove('hidden');
@@ -2168,8 +2182,11 @@
     translateDOM();
 
     // 2. Then fetch cloud data and re-render with latest data
-    await loadCloudData();
+    if (!isGuest) {
+      await loadCloudData();
+    }
     cloudLoaded = true;
+    if (loader) loader.classList.add('hidden');
 
     // Re-render current tab with fresh cloud data
     if (state.currentTab === 'notes') renderNotes();
@@ -2184,7 +2201,9 @@
   function handleLogout() {
     save();
     unsubscribeRealtime(); // Stop real-time sync on logout
-    cloudLoaded = false;
+    const loader = $('#loadingScreen');
+    if (loader) loader.classList.add('hidden');
+
     state.currentUser = null;
     localStorage.removeItem('flowist_current_user');
     $('#appShell').classList.add('hidden');
