@@ -1,5 +1,5 @@
 // ═══ Service Worker — Offline Support ═══
-const CACHE_NAME = 'flowist-v1';
+const CACHE_NAME = 'flowist-v2';
 const ASSETS = [
   '/',
   '/index.html',
