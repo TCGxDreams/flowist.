@@ -269,7 +269,7 @@
 
   // ── Supabase Cloud Sync & Fetch ─────────────────────────────────────
   async function _doSyncCloud(key, data) {
-    if (!window.supabaseClient || !state.currentUser) return;
+    if (!window.supabaseClient || typeof window.supabaseClient.from !== 'function' || !state.currentUser) return;
     _lastCloudSyncAt = Date.now();
     try {
       await window.supabaseClient
@@ -315,7 +315,7 @@
 
 
   async function syncArchiveSupabaseCloud(archiveData) {
-    if (!window.supabaseClient || !state.currentUser) return;
+    if (!window.supabaseClient || typeof window.supabaseClient.from !== 'function' || !state.currentUser) return;
     const key = getUserStorageKey();
     try {
       await window.supabaseClient
@@ -356,7 +356,7 @@
   }
 
   async function loadCloudData() {
-    if (!state.currentUser || !window.supabaseClient) return;
+    if (!state.currentUser || !window.supabaseClient || typeof window.supabaseClient.from !== 'function') return;
     const key = getUserStorageKey();
     try {
       const { data, error } = await window.supabaseClient
@@ -2005,7 +2005,7 @@
           localStorage.setItem('flowist_users', JSON.stringify(users));
           
           // Sync hashed password to Supabase cloud table (NEVER plain-text)
-          if (window.supabaseClient) {
+          if (window.supabaseClient && typeof window.supabaseClient.from === 'function') {
             try {
               await window.supabaseClient
                 .from('flowist_users')
@@ -2028,7 +2028,7 @@
         let profile = users[email];
         let storedPassword = typeof profile === 'object' ? profile?.password : profile;
 
-        if (!storedPassword && window.supabaseClient) {
+        if (!storedPassword && window.supabaseClient && typeof window.supabaseClient.from === 'function') {
           try {
             const { data } = await window.supabaseClient
               .from('flowist_users')
@@ -2050,7 +2050,7 @@
 
         if (isValid) {
           // Always ensure the user profile exists on the cloud database (important for satisfying foreign key constraints)
-          if (window.supabaseClient) {
+          if (window.supabaseClient && typeof window.supabaseClient.from === 'function') {
             window.supabaseClient
               .from('flowist_users')
               .upsert({ email, password_hash: hashedPassword, nickname: profile?.nickname || '' }, { onConflict: 'email' })
@@ -2075,7 +2075,7 @@
 
   // ── Real-time sync ────────────────────────────────────────────
   function subscribeRealtime() {
-    if (!window.supabaseClient || !state.currentUser || state.currentUser === 'guest') return;
+    if (!window.supabaseClient || typeof window.supabaseClient.from !== 'function' || !state.currentUser || state.currentUser === 'guest') return;
     unsubscribeRealtime(); // clean up any existing subscription first
 
     const key = getUserStorageKey();
