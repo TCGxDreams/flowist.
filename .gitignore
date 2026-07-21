@@ -1,10 +1,12 @@
 # Security & Secrets
 .env
+env
 .env.local
 .env.*.local
 src/config.js
 config.js
 schema.sql
+
 
 
 
