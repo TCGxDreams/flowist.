@@ -261,6 +261,35 @@
     return toLocalDateStr(getWeekDates(offset)[0]);
   }
 
+  // Unique ID for this browser tab — used to ignore self-triggered Realtime events
+  const DEVICE_ID = Math.random().toString(36).slice(2);
+  let _cloudSyncTimer = null;
+
+  // ── Supabase Cloud Sync & Fetch ─────────────────────────────────────
+  async function _doSyncCloud(key, data) {
+    if (!window.supabaseClient || !state.currentUser) return;
+    try {
+      await window.supabaseClient
+        .from('flowist_data')
+        .upsert({
+          user_key: key,
+          payload: data,
+          email: state.currentUser,
+          updated_at: new Date().toISOString(),
+          device_id: DEVICE_ID   // tag so other tabs can skip self-updates
+        }, { onConflict: 'user_key' });
+    } catch (err) {
+      console.warn('Supabase cloud sync error:', err);
+    }
+  }
+
+  // Debounced wrapper — waits 1.5s of silence before actually uploading
+  // Prevents spam-uploading every single keystroke
+  function syncSupabaseCloud(key, data) {
+    clearTimeout(_cloudSyncTimer);
+    _cloudSyncTimer = setTimeout(() => _doSyncCloud(key, data), 1500);
+  }
+
   function escHtml(str) {
     const d = document.createElement('div');
     d.textContent = str || '';
@@ -282,17 +311,7 @@
     return `${STORAGE_KEY}_${prefix}`;
   }
 
-  // ── Supabase Cloud Sync & Fetch ────────────────────────────
-  async function syncSupabaseCloud(key, data) {
-    if (!window.supabaseClient || !state.currentUser) return;
-    try {
-      await window.supabaseClient
-        .from('flowist_data')
-        .upsert({ user_key: key, payload: data, email: state.currentUser, updated_at: new Date().toISOString() }, { onConflict: 'user_key' });
-    } catch (err) {
-      console.warn('Supabase cloud sync error:', err);
-    }
-  }
+
 
   async function syncArchiveSupabaseCloud(archiveData) {
     if (!window.supabaseClient || !state.currentUser) return;
@@ -2023,9 +2042,11 @@
           'postgres_changes',
           { event: 'UPDATE', schema: 'public', table: 'flowist_data', filter: `user_key=eq.${key}` },
           async (payload) => {
-            // Another device saved data — refresh local state
             const remoteData = payload.new;
             if (!remoteData) return;
+
+            // Skip if this update was sent by the SAME device — avoids self-flicker
+            if (remoteData.device_id && remoteData.device_id === DEVICE_ID) return;
 
             const storageKey = getUserStorageKey();
             if (remoteData.payload) {
@@ -2048,7 +2069,21 @@
               localStorage.setItem(archiveKey, JSON.stringify(Object.values(map)));
             }
 
-            // Re-render current view
+            // Don't re-render if user is actively typing in any input/textarea
+            const active = document.activeElement;
+            const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+
+            if (isTyping && state.currentTab === 'notes') {
+              // For notes: only update the text if it's a DIFFERENT day's note, preserve cursor
+              const dates = getWeekDates(state.weekOffset);
+              dates.forEach((date, i) => {
+                if (i === state.selectedNoteDay) return; // skip the day user is editing
+                // Just update state silently, no DOM changes needed for other days
+              });
+              return; // don't touch the DOM while typing
+            }
+
+            // Re-render current view (safe — user is not actively typing)
             if (state.currentTab === 'notes') renderNotes();
             else if (state.currentTab === 'planner') render();
             else if (state.currentTab === 'stats') renderStats();
