@@ -15,9 +15,9 @@
       weeksAgo: 'tuần trước',
       inWeeks: 'trong {n} tuần',
       emailReportSubject: 'Báo cáo kế hoạch tuần',
-      copiedToClipboard: 'Đã sao chép vào clipboard ✓',
-      downloadedReport: 'Đã tải báo cáo ✓',
-      emailClientOpened: 'Đang mở trình duyệt email ✓',
+      copiedToClipboard: 'Đã sao chép vào clipboard',
+      downloadedReport: 'Đã tải báo cáo',
+      emailClientOpened: 'Đang mở trình duyệt email',
       authRequired: 'Vui lòng đăng nhập hoặc chọn chế độ khách',
       loginSuccess: 'Đăng nhập thành công',
       registrationSuccess: 'Đăng ký thành công! Hãy đăng nhập.',
@@ -60,7 +60,7 @@
       toastProjectUpdated: 'Đã cập nhật dự án',
       toastSubtaskDeleted: 'Đã xóa nhiệm vụ con',
       toastSubtaskUpdated: 'Đã cập nhật nhiệm vụ con',
-      toastCompletedProj: '🎉 Đã hoàn thành dự án "{name}"!',
+      toastCompletedProj: 'Đã hoàn thành dự án "{name}"!',
       placeholderNoteText: 'Ghi lại những ý nghĩ, kế hoạch hoặc bất kỳ điều gì cho hôm nay…',
       placeholderProjectName: 'Tên dự án…',
       placeholderSubtaskName: 'Nhiệm vụ con…',
@@ -80,7 +80,7 @@
       lblShareMailOpt: 'Gửi bản nháp qua Email',
       lblShareCopyOpt: 'Sao chép Markdown vào Clipboard',
       lblShareDownloadOpt: 'Tải xuống tệp báo cáo (.txt)',
-      welcomeTitle: 'Bắt đầu tuần mới ✨',
+      welcomeTitle: 'Bắt đầu tuần mới',
       welcomeSubtitle: 'Chia nhỏ công việc thành các dự án và nhiệm vụ con, phân bổ chúng trong tuần và tích chọn khi hoàn thành.',
       welcomeStep1: 'Tạo một dự án lớn',
       welcomeStep2: 'Thêm nhiệm vụ con để chia nhỏ',
@@ -96,9 +96,9 @@
       weeksAgo: 'weeks ago',
       inWeeks: 'in {n} weeks',
       emailReportSubject: 'Weekly Planner Report',
-      copiedToClipboard: 'Copied to clipboard ✓',
-      downloadedReport: 'Downloaded report ✓',
-      emailClientOpened: 'Email client opened ✓',
+      copiedToClipboard: 'Copied to clipboard',
+      downloadedReport: 'Downloaded report',
+      emailClientOpened: 'Email client opened',
       authRequired: 'Please login or choose Guest Mode',
       loginSuccess: 'Login successful',
       registrationSuccess: 'Registration successful! Please login.',
@@ -141,7 +141,7 @@
       toastProjectUpdated: 'Project updated',
       toastSubtaskDeleted: 'Subtask deleted',
       toastSubtaskUpdated: 'Subtask updated',
-      toastCompletedProj: '🎉 "{name}" completed!',
+      toastCompletedProj: '"{name}" completed!',
       placeholderNoteText: 'Write your thoughts, plans, or anything for today…',
       placeholderProjectName: 'Project name…',
       placeholderSubtaskName: 'Subtask name…',
@@ -161,7 +161,7 @@
       lblShareMailOpt: 'Email draft report',
       lblShareCopyOpt: 'Copy Markdown to clipboard',
       lblShareDownloadOpt: 'Download report (.txt)',
-      welcomeTitle: 'Start your week ✨',
+      welcomeTitle: 'Start your week',
       welcomeSubtitle: 'Break your work into projects and tasks, spread them across the week, and check things off as you go.',
       welcomeStep1: 'Create a project',
       welcomeStep2: 'Add subtasks to break it down',
@@ -654,7 +654,7 @@
     else { 
       label = formatDate(d); 
     }
-    return `<span class="deadchip ${cls}">📅 ${label}</span>`;
+    return `<span class="deadchip ${cls}"><span class="deadchip-ico"></span>${label}</span>`;
   }
 
   function renderSubs(project) {
@@ -791,7 +791,7 @@
             <span class="day-name">
               ${today ? `<em class="todaymark">${todayLabel}</em> · ` : ''}${DAY_NAMES[i]} ${date.getDate()}
             </span>
-            ${allDone ? '<span class="day-dot">✓</span>' : ''}
+            ${allDone ? '<span class="day-dot"></span>' : ''}
             ${pctStr ? `<span class="day-pct">${pctStr}</span>` : ''}
           </button>
           <div class="day-body">
@@ -1351,7 +1351,7 @@
             <span class="archive-pct-label">${state.lang === 'vi' ? 'hoàn thành' : 'complete'}</span>
           </div>
           <div class="archive-actions">
-            <button class="archive-icon-btn" data-copy-idx="${idx}" title="Copy">📋</button>
+            <button class="archive-icon-btn" data-copy-idx="${idx}" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
             <button class="archive-icon-btn del" data-del-idx="${idx}" title="Delete">×</button>
           </div>
         </div>`;
