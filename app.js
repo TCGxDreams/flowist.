@@ -376,7 +376,8 @@
     syncSupabaseCloud(key, allData);
   }
 
-  function load() {
+  // Sync-only local load (no cloud call, safe to call multiple times)
+  function loadLocal() {
     if (!state.currentUser) return;
     const weekKey = getWeekKey(state.weekOffset);
     const key = getUserStorageKey();
@@ -384,7 +385,11 @@
     const weekData = allData[weekKey];
     state.projects = weekData?.projects || [];
     state.notes = weekData?.notes || {};
-    loadCloudData();
+  }
+
+  // Legacy alias — used by navigateWeek and other places
+  function load() {
+    loadLocal();
   }
 
   function pushUndo(label) {
@@ -1263,6 +1268,22 @@
   function saveCurrentNote() {
     const textarea = $('#noteTextarea');
     if (!textarea) return;
+    // Guard: don't overwrite Supabase with empty state before cloud data arrives
+    if (!cloudLoaded && state.currentUser !== 'guest') {
+      // Still save locally — cloud sync happens after loadCloudData resolves
+      const dates = getWeekDates(state.weekOffset);
+      const key = toLocalDateStr(dates[state.selectedNoteDay]);
+      const val = textarea.value;
+      if (val.trim()) state.notes[key] = val;
+      else delete state.notes[key];
+      // Only write to localStorage, skip Supabase until cloud is ready
+      const weekKey = getWeekKey(state.weekOffset);
+      const storageKey = getUserStorageKey();
+      const allData = JSON.parse(localStorage.getItem(storageKey) || '{}');
+      allData[weekKey] = { projects: state.projects, notes: state.notes, savedAt: new Date().toISOString() };
+      localStorage.setItem(storageKey, JSON.stringify(allData));
+      return;
+    }
     const dates = getWeekDates(state.weekOffset);
     const key = toLocalDateStr(dates[state.selectedNoteDay]);
     const val = textarea.value;
@@ -1983,17 +2004,29 @@
     });
   }
 
-  function enterWorkspace() {
+  let cloudLoaded = false;  // Guard: prevent saving empty state before cloud data arrives
+
+  async function enterWorkspace() {
+    cloudLoaded = false;
     $('#loginScreen').classList.add('hidden');
     $('#appShell').classList.remove('hidden');
-    // Show nav elements now that user is logged in
     $('#tabbar').classList.remove('hidden');
     $('#fabBtn').classList.remove('hidden');
 
-    // Load & Render user tasks
-    load();
+    // 1. Render immediately from localStorage (fast, no delay)
+    loadLocal();
     render();
     translateDOM();
+
+    // 2. Then fetch cloud data and re-render with latest data
+    await loadCloudData();
+    cloudLoaded = true;
+
+    // Re-render current tab with fresh cloud data
+    if (state.currentTab === 'notes') renderNotes();
+    else if (state.currentTab === 'planner') render();
+    else if (state.currentTab === 'stats') renderStats();
+    else if (state.currentTab === 'archive') renderArchive();
   }
 
   function handleLogout() {
