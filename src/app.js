@@ -356,7 +356,7 @@
   }
 
   async function loadCloudData() {
-    if (!state.currentUser || !window.supabaseClient || typeof window.supabaseClient.from !== 'function') return;
+    if (!state.currentUser || !window.supabaseClient || typeof window.supabaseClient.from !== 'function') return false;
     const key = getUserStorageKey();
     try {
       const { data, error } = await window.supabaseClient
@@ -364,6 +364,11 @@
         .select('payload, archive')
         .eq('user_key', key)
         .maybeSingle();
+
+      if (error) {
+        console.warn('Supabase cloud load error:', error);
+        return false;
+      }
 
       if (data) {
         let updated = false;
@@ -397,19 +402,16 @@
         }
 
         if (updated) {
-          if (state.currentTab === 'notes') {
-            renderNotes();
-          } else if (state.currentTab === 'planner') {
-            render();
-          } else if (state.currentTab === 'stats') {
-            renderStats();
-          } else if (state.currentTab === 'archive') {
-            renderArchive();
-          }
+          if (state.currentTab === 'notes') renderNotes();
+          else if (state.currentTab === 'planner') render();
+          else if (state.currentTab === 'stats') renderStats();
+          else if (state.currentTab === 'archive') renderArchive();
         }
       }
+      return true;
     } catch (err) {
-      console.warn('Supabase cloud load error:', err);
+      console.warn('Supabase cloud load exception:', err);
+      return false;
     }
   }
 
@@ -2139,7 +2141,11 @@
     // Fallback: poll every 30 seconds (covers environments where WebSocket is restricted)
     pollInterval = setInterval(async () => {
       if (!document.hidden) { // only poll when tab is visible
-        await loadCloudData();
+        const success = await loadCloudData();
+        if (success && !cloudLoaded) {
+          cloudLoaded = true;
+          toast(state.lang === 'vi' ? 'Đã kết nối và đồng bộ với Cloud!' : 'Connected and synced with Cloud!');
+        }
       }
     }, 30000);
   }
@@ -2174,9 +2180,15 @@
 
     // 2. Then fetch cloud data and re-render with latest data
     if (!isGuest) {
-      await loadCloudData();
+      const success = await loadCloudData();
+      if (success) {
+        cloudLoaded = true;
+      } else {
+        toast(state.lang === 'vi' ? 'Không thể kết nối Cloud. Đang chạy offline tạm thời.' : 'Cannot connect to Cloud. Operating offline temporarily.', 4000);
+      }
+    } else {
+      cloudLoaded = true;
     }
-    cloudLoaded = true;
     if (loader) loader.classList.add('hidden');
 
     // Re-render current tab with fresh cloud data
