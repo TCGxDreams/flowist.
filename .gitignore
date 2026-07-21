@@ -4,6 +4,8 @@
 .env.*.local
 src/config.js
 config.js
+schema.sql
+
 
 
 # Operating System Files
