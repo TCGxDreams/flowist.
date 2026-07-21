@@ -324,6 +324,35 @@
     }
   }
 
+  // Merge payloads at week-level using savedAt timestamps to resolve conflicts
+  function mergePayloads(local, remote) {
+    const merged = {};
+    const allKeys = new Set([...Object.keys(local), ...Object.keys(remote)]);
+    let localHasNewer = false;
+
+    for (const wk of allKeys) {
+      const loc = local[wk];
+      const rem = remote[wk];
+
+      if (loc && rem) {
+        const locTime = new Date(loc.savedAt || 0).getTime();
+        const remTime = new Date(rem.savedAt || 0).getTime();
+        if (locTime >= remTime) {
+          merged[wk] = loc;
+          if (locTime > remTime) localHasNewer = true;
+        } else {
+          merged[wk] = rem;
+        }
+      } else if (loc) {
+        merged[wk] = loc;
+        localHasNewer = true;
+      } else {
+        merged[wk] = rem;
+      }
+    }
+    return { merged, localHasNewer };
+  }
+
   async function loadCloudData() {
     if (!state.currentUser || !window.supabaseClient) return;
     const key = getUserStorageKey();
@@ -339,8 +368,13 @@
         if (data.payload) {
           const cloudAllData = data.payload;
           const localAllData = JSON.parse(localStorage.getItem(key) || '{}');
-          const merged = { ...localAllData, ...cloudAllData };
+          const { merged, localHasNewer } = mergePayloads(localAllData, cloudAllData);
           localStorage.setItem(key, JSON.stringify(merged));
+
+          // If local has newer edits that are not on cloud, push them up
+          if (localHasNewer) {
+            syncSupabaseCloud(key, merged);
+          }
 
           const weekKey = getWeekKey(state.weekOffset);
           const weekData = merged[weekKey];
@@ -1334,14 +1368,13 @@
     const dates = getWeekDates(state.weekOffset);
     const weekKey = toLocalDateStr(dates[0]);
     const archive = getArchiveData();
-    // Don't duplicate
-    if (archive.find(w => w.weekKey === weekKey)) return;
     const totalTasks = state.projects.reduce((s, p) => s + p.subs.length, 0);
     if (totalTasks === 0) return;
     const doneTasks = state.projects.reduce((s, p) => s + p.subs.filter(x => x.done).length, 0);
     const dayHasTasks = Array(7).fill(false);
     state.projects.forEach(p => p.subs.forEach(s => s.days.forEach(d => { dayHasTasks[d] = true; })));
-    archive.unshift({
+
+    const newEntry = {
       weekKey,
       startDate: dates[0].toISOString(),
       endDate: dates[6].toISOString(),
@@ -1349,7 +1382,14 @@
       doneTasks,
       dayHasTasks,
       completionPct: Math.round((doneTasks / totalTasks) * 100)
-    });
+    };
+
+    const existingIdx = archive.findIndex(w => w.weekKey === weekKey);
+    if (existingIdx !== -1) {
+      archive[existingIdx] = newEntry;
+    } else {
+      archive.unshift(newEntry);
+    }
     saveArchiveData(archive);
   }
 
@@ -2052,7 +2092,7 @@
             const storageKey = getUserStorageKey();
             if (remoteData.payload) {
               const local = JSON.parse(localStorage.getItem(storageKey) || '{}');
-              const merged = { ...local, ...remoteData.payload };
+              const { merged } = mergePayloads(local, remoteData.payload);
               localStorage.setItem(storageKey, JSON.stringify(merged));
               const weekKey = getWeekKey(state.weekOffset);
               const weekData = merged[weekKey];
