@@ -273,7 +273,7 @@
     return `${STORAGE_KEY}_${prefix}`;
   }
 
-  // ── Supabase Cloud Sync ─────────────────────────────────────
+  // ── Supabase Cloud Sync & Fetch ────────────────────────────
   async function syncSupabaseCloud(key, data) {
     if (!window.supabaseClient) return;
     try {
@@ -282,6 +282,39 @@
         .upsert({ user_key: key, payload: data, updated_at: new Date().toISOString() }, { onConflict: 'user_key' });
     } catch (err) {
       console.warn('Supabase cloud sync notification:', err);
+    }
+  }
+
+  async function loadCloudData() {
+    if (!state.currentUser || !window.supabaseClient) return;
+    const key = getUserStorageKey();
+    try {
+      const { data, error } = await window.supabaseClient
+        .from('flowist_data')
+        .select('payload')
+        .eq('user_key', key)
+        .maybeSingle();
+
+      if (data && data.payload) {
+        const cloudAllData = data.payload;
+        const localAllData = JSON.parse(localStorage.getItem(key) || '{}');
+        const merged = { ...localAllData, ...cloudAllData };
+        localStorage.setItem(key, JSON.stringify(merged));
+
+        const weekKey = getWeekKey(state.weekOffset);
+        const weekData = merged[weekKey];
+        if (weekData) {
+          state.projects = weekData.projects || [];
+          state.notes = weekData.notes || {};
+          if (state.currentTab === 'notes') {
+            renderNotes();
+          } else if (state.currentTab === 'planner') {
+            render();
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase cloud load error:', err);
     }
   }
 
@@ -310,6 +343,7 @@
     const weekData = allData[weekKey];
     state.projects = weekData?.projects || [];
     state.notes = weekData?.notes || {};
+    loadCloudData();
   }
 
   function pushUndo(label) {
@@ -1186,10 +1220,12 @@
   const DAY_FULL_VI = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
 
   function saveCurrentNote() {
+    const textarea = $('#noteTextarea');
+    if (!textarea) return;
     const dates = getWeekDates(state.weekOffset);
     const key = dates[state.selectedNoteDay].toISOString().split('T')[0];
-    const val = $('#noteTextarea').value.trim();
-    if (val) {
+    const val = textarea.value;
+    if (val.trim()) {
       state.notes[key] = val;
     } else {
       delete state.notes[key];
@@ -2086,8 +2122,11 @@
       });
     });
 
-    // Auto-save on note typing
-    $('#noteTextarea').addEventListener('blur', () => {
+    // Auto-save on note typing (input + blur)
+    $('#noteTextarea')?.addEventListener('input', () => {
+      if (state.currentTab === 'notes') saveCurrentNote();
+    });
+    $('#noteTextarea')?.addEventListener('blur', () => {
       if (state.currentTab === 'notes') saveCurrentNote();
     });
 

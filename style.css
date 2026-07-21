@@ -2042,12 +2042,12 @@ input, textarea {
   flex: none;
 }
 
-/* ── Tab Navigation Bar: Phone + iPad (≤ 1366px) ─────────────── */
+/* ── Tab Navigation Bar: Phone + iPad + Touch Tablets ─────────── */
 .tabbar {
   display: none;
 }
 
-@media (max-width: 1366px) {
+@media (max-width: 1400px), (pointer: coarse) {
   /* Hide desktop-only FAB and nav buttons */
   .desktop-fab { display: none !important; }
   #planNavBtn, #notesNavBtn, #statsNavBtn, #archiveNavBtn { display: none !important; }
