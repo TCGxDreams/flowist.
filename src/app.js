@@ -2122,15 +2122,7 @@
             const active = document.activeElement;
             const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
 
-            if (isTyping && state.currentTab === 'notes') {
-              // For notes: only update the text if it's a DIFFERENT day's note, preserve cursor
-              const dates = getWeekDates(state.weekOffset);
-              dates.forEach((date, i) => {
-                if (i === state.selectedNoteDay) return; // skip the day user is editing
-                // Just update state silently, no DOM changes needed for other days
-              });
-              return; // don't touch the DOM while typing
-            }
+            if (isTyping) return;
 
             // Re-render current view (safe — user is not actively typing)
             if (state.currentTab === 'notes') renderNotes();
