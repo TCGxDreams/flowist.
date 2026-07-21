@@ -259,6 +259,15 @@
     return `${year}-${month}-${day}`;
   }
 
+  function parseLocalDate(str) {
+    if (!str) return new Date();
+    if (typeof str === 'string' && str.includes('-') && !str.includes('T') && !str.includes(':')) {
+      const [y, m, d] = str.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+    return new Date(str);
+  }
+
   function getWeekKey(offset) {
     return toLocalDateStr(getWeekDates(offset)[0]);
   }
@@ -392,13 +401,33 @@
           }
         }
 
-        if (data.archive) {
-          const archiveKey = getArchiveKey();
-          const localArchive = JSON.parse(localStorage.getItem(archiveKey) || '[]');
-          const archiveMap = {};
-          localArchive.forEach(item => { archiveMap[item.weekKey] = item; });
-          data.archive.forEach(item => { archiveMap[item.weekKey] = item; });
-          localStorage.setItem(archiveKey, JSON.stringify(Object.values(archiveMap)));
+        // Merge and Sync Archive data
+        const archiveKey = getArchiveKey();
+        const localArchive = JSON.parse(localStorage.getItem(archiveKey) || '[]');
+        const cloudArchive = data.archive || [];
+        const archiveMap = {};
+        let localHasNewerArchive = false;
+
+        localArchive.forEach(item => { archiveMap[item.weekKey] = item; });
+        cloudArchive.forEach(item => {
+          if (!archiveMap[item.weekKey]) {
+            archiveMap[item.weekKey] = item;
+          }
+        });
+
+        const mergedArchive = Object.values(archiveMap);
+        mergedArchive.sort((a, b) => b.weekKey.localeCompare(a.weekKey));
+
+        if (localArchive.length > 0 && cloudArchive.length < mergedArchive.length) {
+          localHasNewerArchive = true;
+        }
+        if (cloudArchive.length === 0 && localArchive.length > 0) {
+          localHasNewerArchive = true;
+        }
+
+        localStorage.setItem(archiveKey, JSON.stringify(mergedArchive));
+        if (localHasNewerArchive) {
+          syncArchiveSupabaseCloud(mergedArchive);
         }
 
         if (updated) {
@@ -1384,8 +1413,8 @@
 
     const newEntry = {
       weekKey,
-      startDate: dates[0].toISOString(),
-      endDate: dates[6].toISOString(),
+      startDate: toLocalDateStr(dates[0]),
+      endDate: toLocalDateStr(dates[6]),
       totalTasks,
       doneTasks,
       dayHasTasks,
@@ -1420,8 +1449,8 @@
       return;
     }
     listEl.innerHTML = archive.map((week, idx) => {
-      const start = new Date(week.startDate);
-      const end = new Date(week.endDate);
+      const start = parseLocalDate(week.startDate);
+      const end = parseLocalDate(week.endDate);
       const fmt = d => d.toLocaleDateString(state.lang === 'vi' ? 'vi-VN' : 'en-US', { day: 'numeric', month: 'short' });
       const dayDots = (week.dayHasTasks || Array(7).fill(false))
         .map((has, i) => `<span class="archive-daydot${has ? ' has-tasks' : ''}" title="${DAY_SHORT[i]}">${DAY_SHORT[i]}</span>`)
@@ -1451,8 +1480,8 @@
       btn.addEventListener('click', () => {
         const idx = parseInt(btn.dataset.copyIdx);
         const week = archive[idx];
-        const start = new Date(week.startDate);
-        const end = new Date(week.endDate);
+        const start = parseLocalDate(week.startDate);
+        const end = parseLocalDate(week.endDate);
         const fmt = d => d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
         const text = `${fmt(start)} – ${fmt(end)}: ${week.doneTasks}/${week.totalTasks} tasks (${week.completionPct}% complete)`;
         navigator.clipboard?.writeText(text);
@@ -1490,8 +1519,8 @@
     const bestWeekPct = allCompletions.length ? Math.max(...allCompletions, completionRate) : completionRate;
     const bestWeekEntry = archive.find(w => w.completionPct === bestWeekPct);
     const bestWeekLabel = bestWeekEntry
-      ? new Date(bestWeekEntry.startDate).toLocaleDateString(state.lang === 'vi' ? 'vi-VN' : 'en-US', { day: 'numeric', month: 'short' })
-        + ' – ' + new Date(bestWeekEntry.endDate).toLocaleDateString(state.lang === 'vi' ? 'vi-VN' : 'en-US', { day: 'numeric', month: 'short' })
+      ? parseLocalDate(bestWeekEntry.startDate).toLocaleDateString(state.lang === 'vi' ? 'vi-VN' : 'en-US', { day: 'numeric', month: 'short' })
+        + ' – ' + parseLocalDate(bestWeekEntry.endDate).toLocaleDateString(state.lang === 'vi' ? 'vi-VN' : 'en-US', { day: 'numeric', month: 'short' })
       : (state.lang === 'vi' ? 'Tuần này' : 'This week');
 
     // Streak: consecutive weeks with > 0 tasks done
@@ -1538,13 +1567,12 @@
     // Build a map of date -> completionPct
     const dateMap = {};
     archive.forEach(w => {
-      const start = new Date(w.startDate);
+      const start = parseLocalDate(w.startDate);
       for (let i = 0; i < 7; i++) {
         const d = new Date(start);
         d.setDate(start.getDate() + i);
         const key = toLocalDateStr(d);
-        const pct = w.completionPct;
-        dateMap[key] = pct;
+        dateMap[key] = w.completionPct;
       }
     });
     // Fill current week
@@ -1554,13 +1582,19 @@
       if (!(key in dateMap)) dateMap[key] = 0;
     });
 
-    // Build 52 weeks grid (Mon-Sun columns)
+    // Build 52 weeks grid (Mon-Sun columns) using local Monday as reference
     const today = new Date();
+    today.setHours(0,0,0,0);
+    const day = today.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const currentMonday = new Date(today);
+    currentMonday.setDate(today.getDate() + diffToMonday);
+
     const cells = [];
     for (let w = 51; w >= 0; w--) {
       for (let d = 0; d < 7; d++) {
-        const date = new Date(today);
-        date.setDate(today.getDate() - (w * 7) - (today.getDay() === 0 ? 6 : today.getDay() - 1) + d);
+        const date = new Date(currentMonday);
+        date.setDate(currentMonday.getDate() - (w * 7) + d);
         const key = toLocalDateStr(date);
         const pct = dateMap[key];
         let level = 0;
