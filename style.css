@@ -2640,11 +2640,18 @@ textarea:focus-visible {
   border-radius: var(--r);
   box-shadow: var(--shadow);
   display: grid;
-  grid-template-columns: minmax(120px, auto) 1fr repeat(7, 22px) minmax(60px, auto) auto;
+  grid-template-columns: minmax(130px, auto) 1fr minmax(60px, auto) auto;
   align-items: center;
-  gap: 10px;
+  gap: 16px;
   padding: 14px 18px;
   transition: box-shadow .15s;
+}
+
+.archive-daydots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
 }
 .archive-row:hover { box-shadow: var(--shadow-hover); }
 .archive-meta {
@@ -2747,10 +2754,21 @@ textarea:focus-visible {
 @media (max-width: 640px) {
   .stats-full-container, .archive-container { padding: 16px; }
   .archive-row {
-    grid-template-columns: 1fr auto;
-    grid-template-rows: auto auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
   }
-  .archive-row .archive-daydot { display: none; }
+  .archive-row .archive-daydots { display: none; }
+  .archive-row > div:nth-child(3) {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+  }
+  .archive-pct { text-align: left; }
+  .archive-pct-label { display: inline-block; margin-left: 6px; }
   .stats-toprow { flex-wrap: wrap; gap: 10px; }
 }
 

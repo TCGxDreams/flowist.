@@ -261,13 +261,14 @@
     return toLocalDateStr(getWeekDates(offset)[0]);
   }
 
-  // Unique ID for this browser tab — used to ignore self-triggered Realtime events
-  const DEVICE_ID = Math.random().toString(36).slice(2);
+  // Timestamp of last time WE pushed to Supabase — used to ignore our own Realtime bounce-back
+  let _lastCloudSyncAt = 0;
   let _cloudSyncTimer = null;
 
   // ── Supabase Cloud Sync & Fetch ─────────────────────────────────────
   async function _doSyncCloud(key, data) {
     if (!window.supabaseClient || !state.currentUser) return;
+    _lastCloudSyncAt = Date.now();
     try {
       await window.supabaseClient
         .from('flowist_data')
@@ -275,8 +276,7 @@
           user_key: key,
           payload: data,
           email: state.currentUser,
-          updated_at: new Date().toISOString(),
-          device_id: DEVICE_ID   // tag so other tabs can skip self-updates
+          updated_at: new Date().toISOString()
         }, { onConflict: 'user_key' });
     } catch (err) {
       console.warn('Supabase cloud sync error:', err);
@@ -284,7 +284,6 @@
   }
 
   // Debounced wrapper — waits 1.5s of silence before actually uploading
-  // Prevents spam-uploading every single keystroke
   function syncSupabaseCloud(key, data) {
     clearTimeout(_cloudSyncTimer);
     _cloudSyncTimer = setTimeout(() => _doSyncCloud(key, data), 1500);
@@ -1385,7 +1384,9 @@
             <span class="archive-daterange">${fmt(start)} – ${fmt(end)}</span>
             <span class="archive-tasks">${week.doneTasks}/${week.totalTasks} ${state.lang === 'vi' ? 'xong' : 'done'}</span>
           </div>
-          ${dayDots}
+          <div class="archive-daydots">
+            ${dayDots}
+          </div>
           <div>
             <span class="archive-pct">${week.completionPct}%</span>
             <span class="archive-pct-label">${state.lang === 'vi' ? 'hoàn thành' : 'complete'}</span>
@@ -2045,8 +2046,8 @@
             const remoteData = payload.new;
             if (!remoteData) return;
 
-            // Skip if this update was sent by the SAME device — avoids self-flicker
-            if (remoteData.device_id && remoteData.device_id === DEVICE_ID) return;
+            // Skip if we ourselves pushed this update recently — avoids self-flicker
+            if (Date.now() - _lastCloudSyncAt < 4000) return;
 
             const storageKey = getUserStorageKey();
             if (remoteData.payload) {
