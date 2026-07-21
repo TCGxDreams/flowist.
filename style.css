@@ -293,6 +293,18 @@ input, textarea {
   color: var(--ink-soft);
   transition: all .15s;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* Constrain ALL SVGs inside toolbar buttons */
+.toolbtn svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  pointer-events: none;
 }
 
 .toolbtn:hover {
@@ -1633,6 +1645,19 @@ input, textarea {
   padding: 7px 10px;
   color: var(--ink-faint);
   transition: all .15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+/* Cap SVG size inside theme toggle buttons */
+.themebtn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  pointer-events: none;
 }
 
 .themebtn + .themebtn { border-left: 1px solid var(--line); }
@@ -2615,9 +2640,9 @@ textarea:focus-visible {
   border-radius: var(--r);
   box-shadow: var(--shadow);
   display: grid;
-  grid-template-columns: auto 1fr repeat(7, 24px) auto auto;
+  grid-template-columns: minmax(120px, auto) 1fr repeat(7, 22px) minmax(60px, auto) auto;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 14px 18px;
   transition: box-shadow .15s;
 }
@@ -2663,7 +2688,8 @@ textarea:focus-visible {
   font-weight: 500;
   color: var(--accent);
   min-width: 44px;
-  text-align: right;
+  text-align: center;
+  line-height: 1.2;
 }
 .archive-pct-label {
   font-family: 'JetBrains Mono', monospace;
@@ -2672,7 +2698,7 @@ textarea:focus-visible {
   text-transform: uppercase;
   color: var(--ink-faint);
   display: block;
-  text-align: right;
+  text-align: center;
 }
 .archive-actions {
   display: flex;
