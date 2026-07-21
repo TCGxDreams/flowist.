@@ -1859,6 +1859,25 @@
       enterWorkspace();
     });
 
+    // Password Security Helper (SHA-256 Hashing)
+    async function hashPassword(plainPassword) {
+      if (!plainPassword) return '';
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(`flowist_salt_v1_${plainPassword.trim()}`);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch (e) {
+        let hash = 0;
+        for (let i = 0; i < plainPassword.length; i++) {
+          hash = (hash << 5) - hash + plainPassword.charCodeAt(i);
+          hash |= 0;
+        }
+        return 'h_' + Math.abs(hash);
+      }
+    }
+
     // Switch between Login and Register — show/hide nickname field
     authSwitchBtn.addEventListener('click', () => {
       authMode = authMode === 'login' ? 'register' : 'login';
@@ -1883,6 +1902,7 @@
         return;
       }
 
+      const hashedPassword = await hashPassword(password);
       const users = JSON.parse(localStorage.getItem('flowist_users') || '{}');
 
       if (authMode === 'register') {
@@ -1890,16 +1910,16 @@
           errorEl.textContent = t('userExists');
           errorEl.classList.remove('hidden');
         } else {
-          // Store locally
-          users[email] = { password, nickname };
+          // Store hashed password locally
+          users[email] = { password: hashedPassword, nickname };
           localStorage.setItem('flowist_users', JSON.stringify(users));
           
-          // Sync to Supabase cloud table
+          // Sync hashed password to Supabase cloud table (NEVER plain-text)
           if (window.supabaseClient) {
             try {
               await window.supabaseClient
                 .from('flowist_users')
-                .upsert({ email, password, nickname }, { onConflict: 'email' });
+                .upsert({ email, password_hash: hashedPassword, nickname }, { onConflict: 'email' });
             } catch (err) {
               console.warn('Supabase reg sync error:', err);
             }
@@ -1914,7 +1934,7 @@
           passwordInput.value = '';
         }
       } else {
-        // Login — check local first, fallback to Supabase cloud if not local
+        // Login — verify hash locally or from Supabase cloud
         let profile = users[email];
         let storedPassword = typeof profile === 'object' ? profile?.password : profile;
 
@@ -1922,21 +1942,35 @@
           try {
             const { data } = await window.supabaseClient
               .from('flowist_users')
-              .select('*')
+              .select('password_hash, nickname')
               .eq('email', email)
               .maybeSingle();
             if (data) {
-              profile = { password: data.password, nickname: data.nickname };
+              storedPassword = data.password_hash || data.password;
+              profile = { password: storedPassword, nickname: data.nickname };
               users[email] = profile;
               localStorage.setItem('flowist_users', JSON.stringify(users));
-              storedPassword = data.password;
             }
           } catch (err) {
             console.warn('Supabase login fetch error:', err);
           }
         }
 
-        if (storedPassword && storedPassword === password) {
+        const isValid = storedPassword && (storedPassword === hashedPassword || storedPassword === password);
+
+        if (isValid) {
+          // Upgrade legacy plain-text password to SHA-256 hash if needed
+          if (storedPassword === password && storedPassword !== hashedPassword) {
+            users[email] = { password: hashedPassword, nickname: profile?.nickname || '' };
+            localStorage.setItem('flowist_users', JSON.stringify(users));
+            if (window.supabaseClient) {
+              window.supabaseClient
+                .from('flowist_users')
+                .upsert({ email, password_hash: hashedPassword, nickname: profile?.nickname || '' }, { onConflict: 'email' })
+                .catch(() => {});
+            }
+          }
+
           state.currentUser = email;
           localStorage.setItem('flowist_current_user', email);
           toast(t('loginSuccess'));
