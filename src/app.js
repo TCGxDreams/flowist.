@@ -2051,10 +2051,13 @@
         if (isValid) {
           // Always ensure the user profile exists on the cloud database (important for satisfying foreign key constraints)
           if (window.supabaseClient && typeof window.supabaseClient.from === 'function') {
-            window.supabaseClient
-              .from('flowist_users')
-              .upsert({ email, password_hash: hashedPassword, nickname: profile?.nickname || '' }, { onConflict: 'email' })
-              .catch((e) => console.warn('Supabase user sync error:', e));
+            try {
+              await window.supabaseClient
+                .from('flowist_users')
+                .upsert({ email, password_hash: hashedPassword, nickname: profile?.nickname || '' }, { onConflict: 'email' });
+            } catch (e) {
+              console.warn('Supabase user sync error:', e);
+            }
           }
 
           state.currentUser = email;
