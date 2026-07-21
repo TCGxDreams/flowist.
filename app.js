@@ -2005,6 +2005,79 @@
   }
 
   let cloudLoaded = false;  // Guard: prevent saving empty state before cloud data arrives
+  let realtimeChannel = null; // Supabase Realtime subscription handle
+  let pollInterval = null;    // Polling fallback interval
+
+  // ── Real-time sync ────────────────────────────────────────────
+  function subscribeRealtime() {
+    if (!window.supabaseClient || !state.currentUser || state.currentUser === 'guest') return;
+    unsubscribeRealtime(); // clean up any existing subscription first
+
+    const key = getUserStorageKey();
+
+    // Primary: Supabase Realtime WebSocket — instant push from server
+    try {
+      realtimeChannel = window.supabaseClient
+        .channel(`flowist_data_${state.currentUser}`)
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'flowist_data', filter: `user_key=eq.${key}` },
+          async (payload) => {
+            // Another device saved data — refresh local state
+            const remoteData = payload.new;
+            if (!remoteData) return;
+
+            const storageKey = getUserStorageKey();
+            if (remoteData.payload) {
+              const local = JSON.parse(localStorage.getItem(storageKey) || '{}');
+              const merged = { ...local, ...remoteData.payload };
+              localStorage.setItem(storageKey, JSON.stringify(merged));
+              const weekKey = getWeekKey(state.weekOffset);
+              const weekData = merged[weekKey];
+              if (weekData) {
+                state.projects = weekData.projects || [];
+                state.notes = weekData.notes || {};
+              }
+            }
+            if (remoteData.archive) {
+              const archiveKey = getArchiveKey();
+              const local = JSON.parse(localStorage.getItem(archiveKey) || '[]');
+              const map = {};
+              local.forEach(i => { map[i.weekKey] = i; });
+              remoteData.archive.forEach(i => { map[i.weekKey] = i; });
+              localStorage.setItem(archiveKey, JSON.stringify(Object.values(map)));
+            }
+
+            // Re-render current view
+            if (state.currentTab === 'notes') renderNotes();
+            else if (state.currentTab === 'planner') render();
+            else if (state.currentTab === 'stats') renderStats();
+            else if (state.currentTab === 'archive') renderArchive();
+          }
+        )
+        .subscribe();
+    } catch (e) {
+      console.warn('Realtime subscribe failed, using polling fallback', e);
+    }
+
+    // Fallback: poll every 30 seconds (covers environments where WebSocket is restricted)
+    pollInterval = setInterval(async () => {
+      if (!document.hidden) { // only poll when tab is visible
+        await loadCloudData();
+      }
+    }, 30000);
+  }
+
+  function unsubscribeRealtime() {
+    if (realtimeChannel) {
+      window.supabaseClient?.removeChannel(realtimeChannel);
+      realtimeChannel = null;
+    }
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
+    }
+  }
 
   async function enterWorkspace() {
     cloudLoaded = false;
@@ -2027,10 +2100,15 @@
     else if (state.currentTab === 'planner') render();
     else if (state.currentTab === 'stats') renderStats();
     else if (state.currentTab === 'archive') renderArchive();
+
+    // 3. Start real-time subscription for live cross-device updates
+    subscribeRealtime();
   }
 
   function handleLogout() {
     save();
+    unsubscribeRealtime(); // Stop real-time sync on logout
+    cloudLoaded = false;
     state.currentUser = null;
     localStorage.removeItem('flowist_current_user');
     $('#appShell').classList.add('hidden');
