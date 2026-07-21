@@ -248,8 +248,17 @@
     return dates.findIndex(d => isToday(d));
   }
 
+  function toLocalDateStr(d) {
+    if (!d) return '';
+    if (typeof d === 'string') d = new Date(d);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   function getWeekKey(offset) {
-    return getWeekDates(offset)[0].toISOString().split('T')[0];
+    return toLocalDateStr(getWeekDates(offset)[0]);
   }
 
   function escHtml(str) {
@@ -275,13 +284,25 @@
 
   // ── Supabase Cloud Sync & Fetch ────────────────────────────
   async function syncSupabaseCloud(key, data) {
-    if (!window.supabaseClient) return;
+    if (!window.supabaseClient || !state.currentUser) return;
     try {
       await window.supabaseClient
         .from('flowist_data')
-        .upsert({ user_key: key, payload: data, updated_at: new Date().toISOString() }, { onConflict: 'user_key' });
+        .upsert({ user_key: key, payload: data, email: state.currentUser, updated_at: new Date().toISOString() }, { onConflict: 'user_key' });
     } catch (err) {
-      console.warn('Supabase cloud sync notification:', err);
+      console.warn('Supabase cloud sync error:', err);
+    }
+  }
+
+  async function syncArchiveSupabaseCloud(archiveData) {
+    if (!window.supabaseClient || !state.currentUser) return;
+    const key = getUserStorageKey();
+    try {
+      await window.supabaseClient
+        .from('flowist_data')
+        .upsert({ user_key: key, archive: archiveData, email: state.currentUser, updated_at: new Date().toISOString() }, { onConflict: 'user_key' });
+    } catch (err) {
+      console.warn('Supabase archive sync error:', err);
     }
   }
 
@@ -291,25 +312,45 @@
     try {
       const { data, error } = await window.supabaseClient
         .from('flowist_data')
-        .select('payload')
+        .select('payload, archive')
         .eq('user_key', key)
         .maybeSingle();
 
-      if (data && data.payload) {
-        const cloudAllData = data.payload;
-        const localAllData = JSON.parse(localStorage.getItem(key) || '{}');
-        const merged = { ...localAllData, ...cloudAllData };
-        localStorage.setItem(key, JSON.stringify(merged));
+      if (data) {
+        let updated = false;
+        if (data.payload) {
+          const cloudAllData = data.payload;
+          const localAllData = JSON.parse(localStorage.getItem(key) || '{}');
+          const merged = { ...localAllData, ...cloudAllData };
+          localStorage.setItem(key, JSON.stringify(merged));
 
-        const weekKey = getWeekKey(state.weekOffset);
-        const weekData = merged[weekKey];
-        if (weekData) {
-          state.projects = weekData.projects || [];
-          state.notes = weekData.notes || {};
+          const weekKey = getWeekKey(state.weekOffset);
+          const weekData = merged[weekKey];
+          if (weekData) {
+            state.projects = weekData.projects || [];
+            state.notes = weekData.notes || {};
+            updated = true;
+          }
+        }
+
+        if (data.archive) {
+          const archiveKey = getArchiveKey();
+          const localArchive = JSON.parse(localStorage.getItem(archiveKey) || '[]');
+          const archiveMap = {};
+          localArchive.forEach(item => { archiveMap[item.weekKey] = item; });
+          data.archive.forEach(item => { archiveMap[item.weekKey] = item; });
+          localStorage.setItem(archiveKey, JSON.stringify(Object.values(archiveMap)));
+        }
+
+        if (updated) {
           if (state.currentTab === 'notes') {
             renderNotes();
           } else if (state.currentTab === 'planner') {
             render();
+          } else if (state.currentTab === 'stats') {
+            renderStats();
+          } else if (state.currentTab === 'archive') {
+            renderArchive();
           }
         }
       }
@@ -1178,7 +1219,7 @@
   // ── Daily Notes ────────────────────────────────────────────
   function getNoteDateKey(dayIdx) {
     const dates = getWeekDates(state.weekOffset);
-    return dates[dayIdx].toISOString().split('T')[0];
+    return toLocalDateStr(dates[dayIdx]);
   }
 
   function renderNotes() {
@@ -1187,7 +1228,7 @@
 
     container.innerHTML = dates.map((date, i) => {
       const active = state.selectedNoteDay === i;
-      const noteKey = date.toISOString().split('T')[0];
+      const noteKey = toLocalDateStr(date);
       const hasContent = !!state.notes[noteKey];
 
       return `
@@ -1199,7 +1240,7 @@
     }).join('');
 
     const activeDate = dates[state.selectedNoteDay];
-    const key = activeDate.toISOString().split('T')[0];
+    const key = toLocalDateStr(activeDate);
     const todayLabel = state.lang === 'vi' ? 'Hôm nay · ' : 'Today · ';
     $('#noteDayLabel').textContent = `${isToday(activeDate) ? todayLabel : ''}${state.lang === 'vi' ? DAY_FULL_VI[state.selectedNoteDay] : DAY_FULL[state.selectedNoteDay]} (${formatDate(activeDate)})`;
     
@@ -1223,7 +1264,7 @@
     const textarea = $('#noteTextarea');
     if (!textarea) return;
     const dates = getWeekDates(state.weekOffset);
-    const key = dates[state.selectedNoteDay].toISOString().split('T')[0];
+    const key = toLocalDateStr(dates[state.selectedNoteDay]);
     const val = textarea.value;
     if (val.trim()) {
       state.notes[key] = val;
@@ -1245,13 +1286,14 @@
 
   function saveArchiveData(data) {
     localStorage.setItem(getArchiveKey(), JSON.stringify(data));
+    syncArchiveSupabaseCloud(data);
   }
 
   // Auto-archive the current week snapshot when navigating weeks
   function autoArchiveCurrentWeek() {
     if (!state.projects.length) return;
     const dates = getWeekDates(state.weekOffset);
-    const weekKey = dates[0].toISOString().split('T')[0];
+    const weekKey = toLocalDateStr(dates[0]);
     const archive = getArchiveData();
     // Don't duplicate
     if (archive.find(w => w.weekKey === weekKey)) return;
@@ -1411,7 +1453,7 @@
       for (let i = 0; i < 7; i++) {
         const d = new Date(start);
         d.setDate(start.getDate() + i);
-        const key = d.toISOString().split('T')[0];
+        const key = toLocalDateStr(d);
         const pct = w.completionPct;
         dateMap[key] = pct;
       }
@@ -1419,7 +1461,7 @@
     // Fill current week
     const dates = getWeekDates(state.weekOffset);
     dates.forEach(d => {
-      const key = d.toISOString().split('T')[0];
+      const key = toLocalDateStr(d);
       if (!(key in dateMap)) dateMap[key] = 0;
     });
 
@@ -1430,7 +1472,7 @@
       for (let d = 0; d < 7; d++) {
         const date = new Date(today);
         date.setDate(today.getDate() - (w * 7) - (today.getDay() === 0 ? 6 : today.getDay() - 1) + d);
-        const key = date.toISOString().split('T')[0];
+        const key = toLocalDateStr(date);
         const pct = dateMap[key];
         let level = 0;
         if (pct !== undefined) {
@@ -1509,7 +1551,7 @@
     if (hasNotes) {
       md += `## ${state.lang === 'vi' ? 'Ghi chú hàng ngày' : 'Daily Notes'}\n`;
       dates.forEach((date, i) => {
-        const key = date.toISOString().split('T')[0];
+        const key = toLocalDateStr(date);
         if (state.notes[key]) {
           md += `### ${state.lang === 'vi' ? DAY_FULL_VI[i] : DAY_FULL[i]} (${formatDate(date)})\n${state.notes[key]}\n\n`;
         }
@@ -1568,7 +1610,7 @@
 
     $('#shareDownload').addEventListener('click', () => {
       const dates = getWeekDates(state.weekOffset);
-      const filename = `week-report-${dates[0].toISOString().split('T')[0]}.txt`;
+      const filename = `week-report-${toLocalDateStr(dates[0])}.txt`;
       const blob = new Blob([generateReportText()], { type: 'text/plain;charset=utf-8' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
