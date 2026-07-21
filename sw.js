@@ -3,8 +3,9 @@ const CACHE_NAME = 'flowist-v1';
 const ASSETS = [
   '/',
   '/index.html',
-  '/style.css',
-  '/app.js',
+  '/src/style.css',
+  '/src/app.js',
+  '/src/config.js',
   '/favicon.svg',
   '/manifest.webmanifest',
   '/icons/icon-192.svg',
