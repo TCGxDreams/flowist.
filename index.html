@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>flowist. | your week, sorted</title>
+  <meta name="description" content="Your week, sorted. A minimal weekly planner that works everywhere." />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+
+  <!-- ═══ PWA ═══ -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#f4f1ea" />
+  <link rel="apple-touch-icon" href="icons/icon-192.svg" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="flowist." />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="root">
+    
+    <!-- ═══ Authentication Screen ═══ -->
+    <div class="login-wrap" id="loginScreen">
+      <div class="login-card">
+        <div class="brand" style="text-align: center; margin-bottom: 8px;">
+          flowist<span class="dot">.</span>
+        </div>
+        <div class="login-sub" id="loginSubtitle" style="text-align: center;">your week, sorted</div>
+        
+        <div class="login-fields">
+          <div class="field hidden" id="nicknameField">
+            <label id="lblNickname">Biệt danh</label>
+            <input type="text" id="authNickname" placeholder="Zen Flow" />
+          </div>
+          <div class="field">
+            <label id="lblEmail">Email</label>
+            <input type="email" id="authEmail" placeholder="you@example.com" />
+          </div>
+          <div class="field">
+            <label id="lblPassword">Mật khẩu</label>
+            <div class="pw-wrap">
+              <input type="password" id="authPassword" placeholder="••••••••" />
+              <button class="pw-toggle" id="pwToggle" aria-label="Toggle password visibility">
+                <svg class="pw-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="login-error hidden" id="authError"></div>
+        <div class="login-notice hidden" id="authNotice"></div>
+
+        <button class="btn primary login-btn" id="authBtn">Đăng nhập</button>
+        
+        <div class="login-switch">
+          <span id="lblSwitchNote">Chưa có tài khoản?</span>
+          <button class="linkbtn" id="authSwitchBtn" style="font-size: 13.5px; font-weight: 500;">Đăng ký</button>
+        </div>
+
+        <div style="text-align: center; margin-top: 14px;">
+          <button class="linkbtn" id="guestBtn" style="font-size: 13px;">Tiếp tục với chế độ khách</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Main App Shell ═══ -->
+    <div class="app hidden" id="appShell">
+
+      <!-- Sticky Header -->
+      <div class="stickyhead" id="stickyhead">
+        <div class="topbar">
+          <button class="brand brand-home" id="brandBtn">flowist<span class="dot">.</span></button>
+
+          <div class="wk">
+            <button class="nav" id="prevWeek" aria-label="Previous week">‹</button>
+            <div class="label" id="weekLabel">
+              <span id="weekRange"></span>
+              <small id="weekSub"></small>
+            </div>
+            <button class="nav" id="nextWeek" aria-label="Next week">›</button>
+          </div>
+
+          <div class="tools">
+            <div class="search-wrap">
+              <button class="toolbtn search-toggle" id="searchToggle">
+                <svg class="search-ico" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.3"/><line x1="10.5" y1="10.5" x2="14" y2="14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+              </button>
+              <input type="text" class="search-input hidden" id="searchInput" placeholder="Tìm kiếm…" />
+            </div>
+
+            <!-- Profile Dropdown Trigger -->
+            <div class="acct" id="acctMenuContainer">
+              <button class="acct-trigger" id="acctTrigger">
+                <svg class="acct-cat" width="18" height="18" viewBox="0 0 32 32">
+                  <circle class="acct-cat-ring" cx="16" cy="16" r="14.5" />
+                  <path class="acct-cat-line" d="M9 16c0-5 3.5-9 7-9s7 4 7 9M7 23c2-2.5 5.5-4 9-4s7 1.5 9 4" />
+                  <circle class="acct-cat-eye" cx="13" cy="13" r="1.5" />
+                  <circle class="acct-cat-eye" cx="19" cy="13" r="1.5" />
+                  <polygon points="15,16 17,16 16,17.5" fill="var(--accent)" />
+                </svg>
+                <span class="whoami" id="userEmailLabel">Khách</span>
+                <span class="acct-caret">▼</span>
+              </button>
+
+              <!-- Dropdown Menu -->
+              <div class="acct-menu hidden" id="acctMenu">
+                <div class="acct-lab" id="lblLangSection">Ngôn ngữ</div>
+                <button class="acct-item" id="langSwitchBtn">🌐 Tiếng Việt / English</button>
+                
+                <div class="acct-sep"></div>
+                
+                <div class="acct-lab" id="lblThemeSection">Giao diện</div>
+                <div class="acct-theme" id="themeToggle" style="margin: 0 8px 8px;">
+                  <button class="themebtn on" data-theme="light">☀</button>
+                  <button class="themebtn" data-theme="dark">☾</button>
+                  <button class="themebtn" data-theme="auto">Auto</button>
+                </div>
+
+                <div class="acct-sep"></div>
+                <button class="acct-item danger" id="logoutBtn">
+                  <svg class="acct-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                  <span id="lblLogout">Đăng xuất</span>
+                </button>
+              </div>
+            </div>
+
+            <button class="toolbtn" id="todayBtn">Today</button>
+            <button class="toolbtn active" id="planNavBtn">PLAN</button>
+            <button class="toolbtn" id="notesNavBtn">NOTES</button>
+            <button class="toolbtn" id="statsNavBtn">STATS</button>
+            <button class="toolbtn" id="archiveNavBtn">ARCHIVE</button>
+            <button class="toolbtn" id="shareBtn" title="Share / Email">
+              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 8V13a1 1 0 001 1h6a1 1 0 001-1V8M11 4L8 1 5 4M8 1v9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="overall" id="overallProgress">
+          <div class="bartrack">
+            <div class="barfill" id="overallFill" style="width: 0%"></div>
+          </div>
+          <div class="pct" id="overallPct">0 tasks</div>
+        </div>
+      </div>
+
+      <!-- PAGE: Planner -->
+      <div class="page active" id="pagePlanner">
+        <div class="grid">
+          <div class="projects-panel">
+            <div class="panel-head">
+              <span class="panel-title" id="lblProjectsTitle">Projects</span>
+              <div class="panel-actions">
+                <button class="ghostbtn" id="collapseAllBtn" title="Toggle collapse">
+                  <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div id="projectsList"></div>
+            <button class="addmain" id="addProjectBtn"><span class="addmain-plus">+</span><span id="lblAddProject">Add project</span></button>
+          </div>
+
+          <div class="calendar-panel">
+            <div class="panel-head">
+              <span class="panel-title" id="calendarTitle">This week</span>
+            </div>
+            <div class="daystrip" id="daystrip"></div>
+            <div class="focushint hidden" id="focusHint">
+              <span id="lblFocusLabel">Viewing</span> <b id="focusDayName"></b> — <button class="linkbtn" id="unfocusBtn">show all</button>
+            </div>
+            <div class="days" id="daysGrid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: Notes -->
+      <div class="page" id="pageNotes">
+        <div class="notes-container">
+          <div class="panel-head" style="justify-content: space-between; align-items: center;">
+            <span class="panel-title" id="lblNotesTitle">Daily Notes</span>
+            <button class="toolbtn" id="notesBackBtn">‹ Back to Plan</button>
+          </div>
+          <div class="notes-daystrip" id="notesDaystrip"></div>
+          <div class="note-editor">
+            <div class="note-day-label" id="noteDayLabel">Today</div>
+            <textarea class="note-textarea" id="noteTextarea" placeholder="Write your thoughts, plans, or anything for today…"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: Stats -->
+      <div class="page" id="pageStats">
+        <div class="stats-full-container">
+          <!-- Header row with back button -->
+          <div class="stats-toprow">
+            <h2 class="stats-page-title" id="lblStatsTitle">Stats</h2>
+            <button class="toolbtn" id="statsBackBtn">‹ Back to Plan</button>
+          </div>
+
+          <!-- Summary cards -->
+          <div class="stat-cards" id="statCards"></div>
+
+          <!-- Activity heatmap -->
+          <div class="stat-section">
+            <div class="stat-section-head">
+              <span class="stat-section-title" id="lblActivity">ACTIVITY</span>
+              <span class="stat-section-sub" id="lblActivitySub">Complete tasks and end a week to fill this in.</span>
+              <span class="heatmap-legend" id="heatmapLegend">
+                <span id="lblHeatLess">LESS</span>
+                <span class="hm-swatch" data-level="0"></span>
+                <span class="hm-swatch" data-level="1"></span>
+                <span class="hm-swatch" data-level="2"></span>
+                <span class="hm-swatch" data-level="3"></span>
+                <span id="lblHeatMore">MORE</span>
+              </span>
+            </div>
+            <div class="heatmap-wrap">
+              <div class="heatmap-grid" id="heatmapGrid"></div>
+            </div>
+          </div>
+
+          <!-- By weekday chart -->
+          <div class="stat-section">
+            <div class="stat-section-head">
+              <div>
+                <span class="stat-section-title" id="lblByWeekday">BY WEEKDAY</span>
+                <span class="stat-section-sub" id="lblByWeekdaySub">No tasks scheduled just yet.</span>
+              </div>
+              <div class="chart-toggle">
+                <button class="chart-toggle-btn active" id="chartModeCompletion" id="lblChartCompletion">COMPLETION</button>
+                <button class="chart-toggle-btn" id="chartModeDistribution" id="lblChartDistribution">DISTRIBUTION</button>
+              </div>
+            </div>
+            <div class="weekday-chart" id="weekdayChart"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- PAGE: Archive -->
+      <div class="page" id="pageArchive">
+        <div class="archive-container">
+          <div class="stats-toprow">
+            <h2 class="stats-page-title" id="lblArchiveTitle">Archive</h2>
+            <div style="display:flex; gap: 8px; align-items: center;">
+              <button class="toolbtn danger-outline" id="archiveClearAllBtn" id="lblArchiveClearAll">✕ CLEAR ALL</button>
+              <button class="toolbtn" id="archiveBackBtn">‹ Back to Plan</button>
+            </div>
+          </div>
+          <div class="archive-count" id="archiveCount">0 archived weeks</div>
+          <div class="archive-list" id="archiveList"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ SVG Sprites ═══ -->
+  <svg style="display:none">
+    <symbol id="ico-check" viewBox="0 0 12 12"><polyline points="2.5 6 5 8.5 9.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ico-grip" viewBox="0 0 7 13"><circle cx="2" cy="2" r="1"/><circle cx="5" cy="2" r="1"/><circle cx="2" cy="6.5" r="1"/><circle cx="5" cy="6.5" r="1"/><circle cx="2" cy="11" r="1"/><circle cx="5" cy="11" r="1"/></symbol>
+    <symbol id="ico-edit" viewBox="0 0 16 16"><path d="M11.5 1.5l3 3L5 14H2v-3z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ico-trash" viewBox="0 0 16 16"><path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1m1 0v9a1 1 0 01-1 1H6a1 1 0 01-1-1V4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ico-calendar" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2 7h12M5 1.5v3M11 1.5v3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></symbol>
+    <symbol id="ico-chevdown" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ico-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="ico-home" viewBox="0 0 24 24"><path d="M3 12l9-8 9 8M5 10v10a1 1 0 001 1h3v-5h6v5h3a1 1 0 001-1V10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ico-note" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><polyline points="14 2 14 8 20 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><line x1="8" y1="13" x2="16" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="17" x2="12" y2="17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="ico-chart" viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ico-share" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ico-mail" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="2 4 12 13 22 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ico-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ico-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  </svg>
+
+  <!-- ═══ Modal ═══ -->
+  <div id="modalRoot"></div>
+
+  <!-- ═══ Toast ═══ -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- ═══ Bottom Tab Bar (Mobile) ═══ -->
+  <nav class="tabbar hidden" id="tabbar">
+    <button class="tabbar-btn on" data-tab="planner">
+      <svg class="tabbar-ic"><use href="#ico-home"/></svg>
+      <span id="tabPlan">Plan</span>
+    </button>
+    <button class="tabbar-btn" data-tab="notes">
+      <svg class="tabbar-ic"><use href="#ico-note"/></svg>
+      <span id="tabNotes">Notes</span>
+    </button>
+    <button class="tabbar-btn fab-tab" id="fabTab">
+      <svg class="tabbar-ic-fab"><use href="#ico-plus"/></svg>
+    </button>
+    <button class="tabbar-btn" data-tab="stats">
+      <svg class="tabbar-ic"><use href="#ico-chart"/></svg>
+      <span id="tabStats">Stats</span>
+    </button>
+    <button class="tabbar-btn" id="tabArchive" data-tab="archive">
+      <svg class="tabbar-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v10a1 1 0 001 1h14a1 1 0 001-1V9"/><path d="M10 13h4"/></svg>
+      <span id="tabArchiveTxt">Archive</span>
+    </button>
+  </nav>
+
+  <!-- ═══ FAB (Desktop) ═══ -->
+  <button class="fab desktop-fab hidden" id="fabBtn" title="Add project (Ctrl+N)">
+    <svg width="22" height="22" viewBox="0 0 16 16"><use href="#ico-plus"/></svg>
+  </button>
+
+  <!-- ═══ Supabase SDK & Config ═══ -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
