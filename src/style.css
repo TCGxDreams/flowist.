@@ -2772,5 +2772,19 @@ textarea:focus-visible {
   .stats-toprow { flex-wrap: wrap; gap: 10px; }
 }
 
+/* ── Prevent PWA auto-zoom on iOS when focusing inputs ── */
+@media (max-width: 800px) {
+  input, 
+  textarea, 
+  select,
+  .field input, 
+  .field textarea,
+  .search-input,
+  .pw-wrap input {
+    font-size: 16px !important;
+  }
+}
+
+
 
 
