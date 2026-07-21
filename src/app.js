@@ -2049,16 +2049,12 @@
         const isValid = storedPassword && (storedPassword === hashedPassword || storedPassword === password);
 
         if (isValid) {
-          // Upgrade legacy plain-text password to SHA-256 hash if needed
-          if (storedPassword === password && storedPassword !== hashedPassword) {
-            users[email] = { password: hashedPassword, nickname: profile?.nickname || '' };
-            localStorage.setItem('flowist_users', JSON.stringify(users));
-            if (window.supabaseClient) {
-              window.supabaseClient
-                .from('flowist_users')
-                .upsert({ email, password_hash: hashedPassword, nickname: profile?.nickname || '' }, { onConflict: 'email' })
-                .catch(() => {});
-            }
+          // Always ensure the user profile exists on the cloud database (important for satisfying foreign key constraints)
+          if (window.supabaseClient) {
+            window.supabaseClient
+              .from('flowist_users')
+              .upsert({ email, password_hash: hashedPassword, nickname: profile?.nickname || '' }, { onConflict: 'email' })
+              .catch((e) => console.warn('Supabase user sync error:', e));
           }
 
           state.currentUser = email;
