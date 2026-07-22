@@ -335,32 +335,62 @@
     }
   }
 
-  // Merge payloads at week-level using savedAt timestamps to resolve conflicts
+  // Merge payloads at week-level using savedAt timestamps and tombstones to resolve conflicts
   function mergePayloads(local, remote) {
     const merged = {};
-    const allKeys = new Set([...Object.keys(local), ...Object.keys(remote)]);
+    const localTomb = local.__deleted || {};
+    const remoteTomb = remote.__deleted || {};
+    const tomb = {};
+    
+    // Merge tombstones using latest timestamps
+    const allTombKeys = new Set([...Object.keys(localTomb), ...Object.keys(remoteTomb)]);
     let localHasNewer = false;
+    for (const tk of allTombKeys) {
+      const locTime = localTomb[tk] ? new Date(localTomb[tk]).getTime() : 0;
+      const remTime = remoteTomb[tk] ? new Date(remoteTomb[tk]).getTime() : 0;
+      if (locTime >= remTime) {
+        tomb[tk] = localTomb[tk];
+        if (locTime > remTime) localHasNewer = true;
+      } else {
+        tomb[tk] = remoteTomb[tk];
+      }
+    }
 
+    const allKeys = new Set([...Object.keys(local), ...Object.keys(remote)]);
     for (const wk of allKeys) {
+      if (wk === '__deleted') continue;
+
       const loc = local[wk];
       const rem = remote[wk];
+      const tombTime = tomb[wk] ? new Date(tomb[wk]).getTime() : 0;
 
       if (loc && rem) {
         const locTime = new Date(loc.savedAt || 0).getTime();
         const remTime = new Date(rem.savedAt || 0).getTime();
         if (locTime >= remTime) {
-          merged[wk] = loc;
-          if (locTime > remTime) localHasNewer = true;
+          if (locTime > tombTime) {
+            merged[wk] = loc;
+            if (locTime > remTime) localHasNewer = true;
+          }
         } else {
-          merged[wk] = rem;
+          if (remTime > tombTime) {
+            merged[wk] = rem;
+          }
         }
       } else if (loc) {
-        merged[wk] = loc;
-        localHasNewer = true;
-      } else {
-        merged[wk] = rem;
+        const locTime = new Date(loc.savedAt || 0).getTime();
+        if (locTime > tombTime) {
+          merged[wk] = loc;
+          localHasNewer = true;
+        }
+      } else if (rem) {
+        const remTime = new Date(rem.savedAt || 0).getTime();
+        if (remTime > tombTime) {
+          merged[wk] = rem;
+        }
       }
     }
+    merged.__deleted = tomb;
     return { merged, localHasNewer };
   }
 
@@ -403,11 +433,33 @@
 
         // Merge and Sync Archive data
         const archiveKey = getArchiveKey();
-        const localArchive = JSON.parse(localStorage.getItem(archiveKey) || '[]');
-        const cloudArchive = data.archive || [];
-        const archiveMap = {};
-        let localHasNewerArchive = false;
+        const localRaw = JSON.parse(localStorage.getItem(archiveKey) || '{"entries":[],"deleted":{}}');
+        const localArchive = Array.isArray(localRaw) ? localRaw : (localRaw.entries || []);
+        const localArchiveDeleted = Array.isArray(localRaw) ? {} : (localRaw.deleted || {});
+        
+        const cloudRaw = data.archive || { entries: [], deleted: {} };
+        const cloudArchive = Array.isArray(cloudRaw) ? cloudRaw : (cloudRaw.entries || []);
+        const cloudArchiveDeleted = Array.isArray(cloudRaw) ? {} : (cloudRaw.deleted || {});
 
+        // Merge deleted list
+        const mergedDeleted = { ...localArchiveDeleted, ...cloudArchiveDeleted };
+        let localHasNewerArchive = false;
+        
+        const localDelKeys = Object.keys(localArchiveDeleted);
+        const remoteDelKeys = Object.keys(cloudArchiveDeleted);
+        const allDelKeys = new Set([...localDelKeys, ...remoteDelKeys]);
+        for (const dk of allDelKeys) {
+          const locTime = localArchiveDeleted[dk] ? new Date(localArchiveDeleted[dk]).getTime() : 0;
+          const remTime = cloudArchiveDeleted[dk] ? new Date(cloudArchiveDeleted[dk]).getTime() : 0;
+          if (locTime >= remTime) {
+            mergedDeleted[dk] = localArchiveDeleted[dk];
+            if (locTime > remTime) localHasNewerArchive = true;
+          } else {
+            mergedDeleted[dk] = cloudArchiveDeleted[dk];
+          }
+        }
+
+        const archiveMap = {};
         localArchive.forEach(item => { archiveMap[item.weekKey] = item; });
         cloudArchive.forEach(item => {
           if (!archiveMap[item.weekKey]) {
@@ -415,7 +467,11 @@
           }
         });
 
-        const mergedArchive = Object.values(archiveMap);
+        // Filter out deleted items
+        const mergedArchive = Object.values(archiveMap).filter(item => {
+          return !mergedDeleted[item.weekKey];
+        });
+
         mergedArchive.sort((a, b) => b.weekKey.localeCompare(a.weekKey));
 
         if (localArchive.length > 0 && cloudArchive.length < mergedArchive.length) {
@@ -425,9 +481,10 @@
           localHasNewerArchive = true;
         }
 
-        localStorage.setItem(archiveKey, JSON.stringify(mergedArchive));
+        const finalData = { entries: mergedArchive, deleted: mergedDeleted };
+        localStorage.setItem(archiveKey, JSON.stringify(finalData));
         if (localHasNewerArchive) {
-          syncArchiveSupabaseCloud(mergedArchive);
+          syncArchiveSupabaseCloud(finalData);
         }
 
         if (updated) {
@@ -447,13 +504,19 @@
     const weekKey = getWeekKey(state.weekOffset);
     const key = getUserStorageKey();
     const allData = JSON.parse(localStorage.getItem(key) || '{}');
+    allData.__deleted = allData.__deleted || {};
     allData[weekKey] = {
       projects: state.projects,
       notes: state.notes,
       savedAt: new Date().toISOString()
     };
-    const keys = Object.keys(allData).sort().reverse();
-    if (keys.length > 20) keys.slice(20).forEach(k => delete allData[k]);
+    const keys = Object.keys(allData).filter(k => k !== '__deleted').sort().reverse();
+    if (keys.length > 20) {
+      keys.slice(20).forEach(k => {
+        allData.__deleted[k] = new Date().toISOString();
+        delete allData[k];
+      });
+    }
     localStorage.setItem(key, JSON.stringify(allData));
     
     // Only upload to cloud if it has finished loading to prevent overwriting cloud with empty state
@@ -1388,10 +1451,32 @@
   }
 
   function getArchiveData() {
-    return JSON.parse(localStorage.getItem(getArchiveKey()) || '[]');
+    const raw = localStorage.getItem(getArchiveKey());
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+      return parsed.entries || [];
+    } catch {
+      return [];
+    }
   }
 
-  function saveArchiveData(data) {
+  function getArchiveDeleted() {
+    const raw = localStorage.getItem(getArchiveKey());
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return {};
+      return parsed.deleted || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function saveArchiveData(entries, deleted = null) {
+    const currentDeleted = deleted || getArchiveDeleted();
+    const data = { entries, deleted: currentDeleted };
     localStorage.setItem(getArchiveKey(), JSON.stringify(data));
     syncArchiveSupabaseCloud(data);
   }
@@ -1489,8 +1574,13 @@
       btn.addEventListener('click', () => {
         const idx = parseInt(btn.dataset.delIdx);
         const a = getArchiveData();
+        const deletedEntry = a[idx];
         a.splice(idx, 1);
-        saveArchiveData(a);
+        
+        const deleted = getArchiveDeleted();
+        deleted[deletedEntry.weekKey] = new Date().toISOString();
+        
+        saveArchiveData(a, deleted);
         renderArchive();
       });
     });
@@ -1547,17 +1637,28 @@
 
     // Archive data for cross-week stats
     const archive = getArchiveData();
-    const weeksTracked = archive.length + 1; // +1 for current
+    const hasCurrentTasks = totalTasks > 0;
+    const weeksTracked = archive.length + (hasCurrentTasks ? 1 : 0);
     const allCompletions = archive.map(w => w.completionPct);
-    const avgCompletion = allCompletions.length
-      ? Math.round(allCompletions.reduce((a, b) => a + b, 0) / allCompletions.length)
-      : completionRate;
-    const bestWeekPct = allCompletions.length ? Math.max(...allCompletions, completionRate) : completionRate;
+    
+    // All-time tasks done calculation for sub-label
+    const totalTasksAllTime = archive.reduce((s, w) => s + w.totalTasks, 0) + (hasCurrentTasks ? totalTasks : 0);
+    const doneTasksAllTime = archive.reduce((s, w) => s + w.doneTasks, 0) + (hasCurrentTasks ? doneTasks : 0);
+
+    const completionsForAvg = [...allCompletions];
+    if (hasCurrentTasks) {
+      completionsForAvg.push(completionRate);
+    }
+    const avgCompletion = completionsForAvg.length
+      ? Math.round(completionsForAvg.reduce((a, b) => a + b, 0) / completionsForAvg.length)
+      : 0;
+
+    const bestWeekPct = completionsForAvg.length ? Math.max(...completionsForAvg) : 0;
     const bestWeekEntry = archive.find(w => w.completionPct === bestWeekPct);
     const bestWeekLabel = bestWeekEntry
       ? parseLocalDate(bestWeekEntry.startDate).toLocaleDateString(state.lang === 'vi' ? 'vi-VN' : 'en-US', { day: 'numeric', month: 'short' })
         + ' – ' + parseLocalDate(bestWeekEntry.endDate).toLocaleDateString(state.lang === 'vi' ? 'vi-VN' : 'en-US', { day: 'numeric', month: 'short' })
-      : (state.lang === 'vi' ? 'Tuần này' : 'This week');
+      : (hasCurrentTasks && completionRate === bestWeekPct ? (state.lang === 'vi' ? 'Tuần này' : 'This week') : (state.lang === 'vi' ? 'Chưa có' : 'None'));
 
     // Streak: consecutive weeks with > 0 tasks done
     let streak = 0;
@@ -1565,14 +1666,14 @@
       if (w.doneTasks > 0) streak++;
       else break;
     }
-    if (doneTasks > 0) streak++;
+    if (hasCurrentTasks && doneTasks > 0) streak++;
 
     // Render summary cards
     $('#statCards').innerHTML = `
       <div class="stat-card">
         <span class="stat-num">${avgCompletion}%</span>
         <span class="stat-lab">${state.lang === 'vi' ? 'Tỉ lệ trung bình' : 'Avg Completion'}</span>
-        <span class="stat-sub">${t('lblTasksDone', { done: doneTasks, total: totalTasks })}</span>
+        <span class="stat-sub">${t('lblTasksDone', { done: doneTasksAllTime, total: totalTasksAllTime })}</span>
       </div>
       <div class="stat-card">
         <span class="stat-num">${bestWeekPct}%</span>
@@ -1600,22 +1701,34 @@
   function renderHeatmap(archive) {
     const grid = $('#heatmapGrid');
     if (!grid) return;
-    // Build a map of date -> completionPct
+    // Build a map of date -> completionPct (or -1 if no tasks scheduled)
     const dateMap = {};
     archive.forEach(w => {
       const start = parseLocalDate(w.startDate);
+      const dayHasTasks = w.dayHasTasks || Array(7).fill(true);
       for (let i = 0; i < 7; i++) {
         const d = new Date(start);
         d.setDate(start.getDate() + i);
         const key = toLocalDateStr(d);
-        dateMap[key] = w.completionPct;
+        dateMap[key] = dayHasTasks[i] ? w.completionPct : -1;
       }
     });
-    // Fill current week
+    // Fill current week with actual daily completion rates
     const dates = getWeekDates(state.weekOffset);
-    dates.forEach(d => {
+    dates.forEach((d, i) => {
       const key = toLocalDateStr(d);
-      if (!(key in dateMap)) dateMap[key] = 0;
+      let total = 0, done = 0;
+      state.projects.forEach(p => p.subs.forEach(s => {
+        if (s.days.includes(i)) {
+          total++;
+          if (s.done) done++;
+        }
+      }));
+      if (total > 0) {
+        dateMap[key] = Math.round((done / total) * 100);
+      } else {
+        dateMap[key] = -1; // no tasks scheduled
+      }
     });
 
     // Build 52 weeks grid (Mon-Sun columns) using local Monday as reference
@@ -1633,18 +1746,25 @@
         date.setDate(currentMonday.getDate() - (w * 7) + d);
         const key = toLocalDateStr(date);
         const pct = dateMap[key];
-        let level = 0;
-        if (pct !== undefined) {
-          if (pct >= 75) level = 3;
-          else if (pct >= 40) level = 2;
-          else if (pct > 0) level = 1;
-          else level = 0;
+        
+        let level = 'none';
+        if (pct !== undefined && pct !== -1) {
+          if (pct >= 75) level = '3';
+          else if (pct >= 40) level = '2';
+          else if (pct > 0) level = '1';
+          else level = '0';
         }
         const isFuture = date > today;
-        cells.push(`<div class="hm-day" data-level="${isFuture ? 0 : (pct !== undefined ? level : 0)}" title="${key}: ${pct !== undefined ? pct + '%' : (state.lang === 'vi' ? 'Không có dữ liệu' : 'No data')}"></div>`);
+        cells.push(`<div class="hm-day" data-level="${isFuture ? 'none' : level}" title="${key}: ${pct !== undefined && pct !== -1 ? pct + '%' : (state.lang === 'vi' ? 'Không có nhiệm vụ' : 'No tasks scheduled')}"></div>`);
       }
     }
     grid.innerHTML = cells.join('');
+
+    // Scroll parent element to the rightmost end so the latest week is visible
+    const wrap = grid.parentElement;
+    if (wrap) {
+      wrap.scrollLeft = wrap.scrollWidth;
+    }
   }
 
   function renderWeekdayChart() {
@@ -1656,12 +1776,21 @@
 
     const dayCompleted = Array(7).fill(0);
     const dayTotal = Array(7).fill(0);
+    let hasTasks = false;
     state.projects.forEach(p => p.subs.forEach(s => {
       s.days.forEach(d => {
         dayTotal[d]++;
         if (s.done) dayCompleted[d]++;
+        hasTasks = true;
       });
     }));
+
+    const subEl = $('#lblByWeekdaySub');
+    if (subEl) {
+      subEl.textContent = hasTasks
+        ? (state.lang === 'vi' ? 'Hiệu suất hoàn thành nhiệm vụ theo từng ngày.' : 'Task completion rate by day.')
+        : (state.lang === 'vi' ? 'Chưa có nhiệm vụ nào được xếp lịch cho tuần này.' : 'No tasks scheduled just yet.');
+    }
 
     const maxVal = weekdayChartMode === 'completion'
       ? Math.max(...dayTotal.map((t, i) => t > 0 ? Math.round(dayCompleted[i] / t * 100) : 0), 1)
@@ -1976,6 +2105,34 @@
       loginSubtitle.textContent = state.lang === 'vi' ? 'kế hoạch tuần tối giản' : 'your week, sorted';
     }
 
+    // Chart toggle buttons, clear all button, and stat subtitles
+    const chartModeCompletion = $('#chartModeCompletion');
+    if (chartModeCompletion) {
+      chartModeCompletion.textContent = state.lang === 'vi' ? 'TỈ LỆ HOÀN THÀNH' : 'COMPLETION';
+    }
+    const chartModeDistribution = $('#chartModeDistribution');
+    if (chartModeDistribution) {
+      chartModeDistribution.textContent = state.lang === 'vi' ? 'PHÂN BỐ' : 'DISTRIBUTION';
+    }
+    const lblArchiveClearAll = $('#lblArchiveClearAll');
+    if (lblArchiveClearAll) {
+      lblArchiveClearAll.textContent = state.lang === 'vi' ? 'XÓA TẤT CẢ' : 'CLEAR ALL';
+    }
+    const lblByWeekday = $('#lblByWeekday');
+    if (lblByWeekday) {
+      lblByWeekday.textContent = state.lang === 'vi' ? 'HIỆU SUẤT THEO THỨ' : 'BY WEEKDAY';
+    }
+    const lblActivity = $('#lblActivity');
+    if (lblActivity) {
+      lblActivity.textContent = state.lang === 'vi' ? 'MỨC ĐỘ HOẠT ĐỘNG' : 'ACTIVITY';
+    }
+    const lblActivitySub = $('#lblActivitySub');
+    if (lblActivitySub) {
+      lblActivitySub.textContent = state.lang === 'vi'
+        ? 'Hoàn thành nhiệm vụ và lưu trữ tuần để tô màu biểu đồ.'
+        : 'Complete tasks and end a week to fill this in.';
+    }
+
     // Refresh display name in profile (nickname > email > guest)
     const userEmailLabel = $('#userEmailLabel');
     if (userEmailLabel) {
@@ -2208,11 +2365,23 @@
             }
             if (remoteData.archive) {
               const archiveKey = getArchiveKey();
-              const local = JSON.parse(localStorage.getItem(archiveKey) || '[]');
+              const localRaw = JSON.parse(localStorage.getItem(archiveKey) || '{"entries":[],"deleted":{}}');
+              const local = Array.isArray(localRaw) ? localRaw : (localRaw.entries || []);
+              const localDeleted = Array.isArray(localRaw) ? {} : (localRaw.deleted || {});
+              
+              const remoteRaw = remoteData.archive;
+              const remote = Array.isArray(remoteRaw) ? remoteRaw : (remoteRaw.entries || []);
+              const remoteDeleted = Array.isArray(remoteRaw) ? {} : (remoteRaw.deleted || {});
+              
+              const mergedDeleted = { ...localDeleted, ...remoteDeleted };
               const map = {};
               local.forEach(i => { map[i.weekKey] = i; });
-              remoteData.archive.forEach(i => { map[i.weekKey] = i; });
-              localStorage.setItem(archiveKey, JSON.stringify(Object.values(map)));
+              remote.forEach(i => {
+                if (!map[i.weekKey]) map[i.weekKey] = i;
+              });
+              
+              const mergedEntries = Object.values(map).filter(item => !mergedDeleted[item.weekKey]);
+              localStorage.setItem(archiveKey, JSON.stringify({ entries: mergedEntries, deleted: mergedDeleted }));
             }
 
             // Safe re-render with unified guard
