@@ -431,10 +431,7 @@
         }
 
         if (updated) {
-          if (state.currentTab === 'notes') renderNotes();
-          else if (state.currentTab === 'planner') render();
-          else if (state.currentTab === 'stats') renderStats();
-          else if (state.currentTab === 'archive') renderArchive();
+          renderCurrent();
         }
       }
       return true;
@@ -1499,6 +1496,45 @@
     });
   }
 
+  // ── Unified Rendering with Active Typing Protection ──────────────────────
+  function renderCurrent() {
+    const sig = JSON.stringify([
+      state.projects,
+      state.notes,
+      state.currentTab,
+      state.weekOffset,
+      state.selectedNoteDay,
+      state.focusDay
+    ]);
+
+    if (sig === _lastRenderSig && !_pendingRender) return;
+
+    const a = document.activeElement;
+    const isTyping = a && (
+      (a.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'reset'].includes(a.type)) ||
+      a.tagName === 'TEXTAREA' ||
+      a.isContentEditable
+    );
+
+    if (isTyping) {
+      _pendingRender = true;
+      a.addEventListener('blur', () => {
+        if (_pendingRender) {
+          _pendingRender = false;
+          renderCurrent();
+        }
+      }, { once: true });
+      return;
+    }
+
+    _lastRenderSig = sig;
+
+    if (state.currentTab === 'notes') renderNotes();
+    else if (state.currentTab === 'planner') render();
+    else if (state.currentTab === 'stats') renderStats();
+    else if (state.currentTab === 'archive') renderArchive();
+  }
+
   // ── Full Stats Render ────────────────────────────────────────
   function renderStats() {
     let totalTasks = 0, doneTasks = 0, highPrioCount = 0, highPrioDone = 0;
@@ -2111,6 +2147,28 @@
   let cloudLoaded = false;  // Guard: prevent saving empty state before cloud data arrives
   let realtimeChannel = null; // Supabase Realtime subscription handle
   let pollInterval = null;    // Polling fallback interval
+  let _lastRenderSig = '';
+  let _pendingRender = false;
+
+  function startPolling() {
+    if (pollInterval) return;
+    pollInterval = setInterval(async () => {
+      if (!document.hidden) { // only poll when tab is visible
+        const success = await loadCloudData();
+        if (success && !cloudLoaded) {
+          cloudLoaded = true;
+          toast(state.lang === 'vi' ? 'Đã kết nối và đồng bộ với Cloud!' : 'Connected and synced with Cloud!');
+        }
+      }
+    }, 30000);
+  }
+
+  function stopPolling() {
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
+    }
+  }
 
   // ── Real-time sync ────────────────────────────────────────────
   function subscribeRealtime() {
@@ -2118,6 +2176,9 @@
     unsubscribeRealtime(); // clean up any existing subscription first
 
     const key = getUserStorageKey();
+
+    // Start polling fallback initially; we will disable it if subscription succeeds
+    startPolling();
 
     // Primary: Supabase Realtime WebSocket — instant push from server
     try {
@@ -2154,34 +2215,21 @@
               localStorage.setItem(archiveKey, JSON.stringify(Object.values(map)));
             }
 
-            // Don't re-render if user is actively typing in any input/textarea
-            const active = document.activeElement;
-            const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
-
-            if (isTyping) return;
-
-            // Re-render current view (safe — user is not actively typing)
-            if (state.currentTab === 'notes') renderNotes();
-            else if (state.currentTab === 'planner') render();
-            else if (state.currentTab === 'stats') renderStats();
-            else if (state.currentTab === 'archive') renderArchive();
+            // Safe re-render with unified guard
+            renderCurrent();
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            stopPolling(); // Stop polling if connection is successful
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            startPolling(); // Fallback to polling if channel drops or times out
+          }
+        });
     } catch (e) {
       console.warn('Realtime subscribe failed, using polling fallback', e);
+      startPolling();
     }
-
-    // Fallback: poll every 30 seconds (covers environments where WebSocket is restricted)
-    pollInterval = setInterval(async () => {
-      if (!document.hidden) { // only poll when tab is visible
-        const success = await loadCloudData();
-        if (success && !cloudLoaded) {
-          cloudLoaded = true;
-          toast(state.lang === 'vi' ? 'Đã kết nối và đồng bộ với Cloud!' : 'Connected and synced with Cloud!');
-        }
-      }
-    }, 30000);
   }
 
   function unsubscribeRealtime() {
@@ -2189,10 +2237,7 @@
       window.supabaseClient?.removeChannel(realtimeChannel);
       realtimeChannel = null;
     }
-    if (pollInterval) {
-      clearInterval(pollInterval);
-      pollInterval = null;
-    }
+    stopPolling();
   }
 
   async function enterWorkspace() {
@@ -2226,10 +2271,7 @@
     if (loader) loader.classList.add('hidden');
 
     // Re-render current tab with fresh cloud data
-    if (state.currentTab === 'notes') renderNotes();
-    else if (state.currentTab === 'planner') render();
-    else if (state.currentTab === 'stats') renderStats();
-    else if (state.currentTab === 'archive') renderArchive();
+    renderCurrent();
 
     // 3. Start real-time subscription for live cross-device updates
     subscribeRealtime();

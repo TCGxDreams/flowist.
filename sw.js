@@ -30,19 +30,27 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
-// Fetch — network first, fallback to cache
+// Fetch — stale-while-revalidate for local assets
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  // Skip cross-origin requests (fonts, etc.)
+  // Only intercept requests for local assets
   if (!e.request.url.startsWith(self.location.origin)) return;
 
   e.respondWith(
-    fetch(e.request)
-      .then(res => {
-        const clone = res.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
-        return res;
-      })
-      .catch(() => caches.match(e.request))
+    caches.match(e.request).then(cachedResponse => {
+      const fetchPromise = fetch(e.request)
+        .then(networkResponse => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(err => {
+          console.warn('SW fetch failed:', err);
+        });
+
+      return cachedResponse || fetchPromise;
+    })
   );
 });
